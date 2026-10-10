@@ -1,0 +1,63 @@
+name: repro 792 open folder
+on:
+  push:
+    branches: [repro/792-open-folder]
+jobs:
+  repro:
+    runs-on: windows-latest
+    env:
+      CUSE_REF: 0ade4f9795f0ee8a49f0c2c0401c3ef0bdace0a4
+    steps:
+      - uses: oven-sh/setup-bun@v2
+      - name: Build cuse
+        shell: bash
+        run: |
+          git clone https://github.com/crafter-agents/cuse.git cuse-src
+          git -C cuse-src checkout --detach "$CUSE_REF"
+          (cd cuse-src && bun install --frozen-lockfile && bun run build)
+          ./cuse-src/dist/cuse.exe os --json
+      - name: Run matrix
+        shell: pwsh
+        run: |
+          $cuse = "$PWD\cuse-src\dist\cuse.exe"
+          $dir = "$env:USERPROFILE\.petdex\pets"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          New-Item -ItemType Directory -Force evidence | Out-Null
+          function Clean {
+            Get-Process explorer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -ne "" } | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-Process cmd -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            (New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.Quit() }
+            Start-Sleep 2
+          }
+          function Probe($name, $file, $argList) {
+            Clean
+            $p = Start-Process -FilePath $file -ArgumentList $argList -PassThru
+            Start-Sleep 6
+            $shell = (New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.LocationURL }
+            $opened = [bool]($shell | Where-Object { $_ -like "*petdex/pets*" })
+            $titles = Get-Process | Where-Object { $_.MainWindowTitle -ne "" } | ForEach-Object { "$($_.ProcessName): $($_.MainWindowTitle)" }
+            & $cuse windows --json | Out-File "evidence\$name-windows.json"
+            & $cuse capture "evidence\$name.png" --json | Out-Null
+            "{0,-28} opened={1} exited={2} titles=[{3}]" -f $name, $opened, $p.HasExited, ($titles -join " | ") | Tee-Object -Append evidence\summary.txt
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          }
+          function Matrix($tag) {
+            Probe "$tag-cmd-start" "cmd.exe" @("/c", "start", '""', "`"$dir`"")
+            Probe "$tag-explorer" "explorer.exe" @("`"$dir`"")
+          }
+          Matrix "baseline"
+          # Break the default verb for folders the way a stale shell extension does.
+          $clsid = "{0BADC0DE-0000-4000-8000-000000000792}"
+          foreach ($k in "Directory", "Folder") {
+            $base = "HKCU:\Software\Classes\$k\shell"
+            New-Item -Force "$base\petdexbroken\command" | Out-Null
+            Set-ItemProperty "$base" -Name "(default)" -Value "petdexbroken"
+            New-ItemProperty -Force "$base\petdexbroken\command" -Name DelegateExecute -Value $clsid | Out-Null
+          }
+          Matrix "broken"
+          Get-Content evidence\summary.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: repro-792
+          path: evidence
