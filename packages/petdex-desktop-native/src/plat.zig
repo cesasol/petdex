@@ -1205,6 +1205,39 @@ pub fn openExternal(target: []const u8) void {
     _ = child.wait(io) catch {};
 }
 
+/// Open a folder in the file manager. Windows goes straight to
+/// explorer.exe: `start` resolves the folder's default shell verb, and a
+/// stale handler there fails with "Class not registered" (#792) while
+/// leaving a modal dialog that blocks the wait below.
+pub fn openFolder(path: []const u8) void {
+    if (builtin.os.tag != .windows) return openExternal(path);
+    var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    var scope = Scope.init();
+    defer scope.deinit();
+    var child = std.process.spawn(scope.io(), .{
+        .argv = &.{ "explorer.exe", windowsPath(&buf, path) orelse return },
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    }) catch return;
+    _ = child.wait(scope.io()) catch {};
+}
+
+/// explorer.exe treats a forward-slash path as unknown and opens the
+/// default folder instead.
+fn windowsPath(buf: []u8, path: []const u8) ?[]const u8 {
+    if (path.len > buf.len) return null;
+    for (path, 0..) |c, i| buf[i] = if (c == '/') '\\' else c;
+    return buf[0..path.len];
+}
+
+test "windowsPath uses backslashes" {
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("C:\\Users\\a\\.petdex\\pets", windowsPath(&buf, "C:\\Users\\a/.petdex/pets").?);
+    var small: [4]u8 = undefined;
+    try std.testing.expect(windowsPath(&small, "C:/long") == null);
+}
+
 /// Resolve the current default HTTP handler through NSWorkspace, then activate
 /// only an already-running instance. No URL is opened or passed to the target,
 /// so this cannot navigate the browser or create a new tab. A closed browser

@@ -2971,7 +2971,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             if (env_home) |home| {
                 var buf: [512]u8 = undefined;
                 const dir = std.fmt.bufPrint(&buf, "{s}/.petdex/pets", .{home}) catch return;
-                plat.openExternal(dir);
+                plat.openFolder(dir);
             }
         },
         .frame_clock => {
