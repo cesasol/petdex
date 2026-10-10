@@ -139,7 +139,9 @@ jobs:
             $cx = [int]($win.x + $win.width / 2); $cy = [int]($win.y + $win.height * 0.6)
             & $cuse focus "Petdex Settings" --json | Out-Null
             & $cuse move $cx $cy --json | Out-Null
-            foreach ($i in 1..10) { & $cuse scroll down 10 --json | Out-Null; Start-Sleep -Milliseconds 200 }
+            # cuse scroll sends PgDn on Windows; Native SDK views only read the wheel.
+            if (-not ('W.M' -as [type])) { Add-Type -Namespace W -Name M -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, int d, UIntPtr e);' }
+            foreach ($i in 1..30) { [W.M]::mouse_event(0x0800, 0, 0, -120, [UIntPtr]::Zero); Start-Sleep -Milliseconds 50 }
             Start-Sleep 2
             & $cuse capture "e2e\$v-settings.png" --json | Out-Null
             $click = if (Test-Path "scenarios\792-open-folder.png") { & $cuse click --find="scenarios\792-open-folder.png" --json 2>&1 } else { "no template yet" }
