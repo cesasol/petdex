@@ -23,14 +23,14 @@ jobs:
           $dir = "$env:USERPROFILE\.petdex\pets"
           New-Item -ItemType Directory -Force $dir | Out-Null
           New-Item -ItemType Directory -Force evidence | Out-Null
-          function Clean {
+          function Reset-Desktop {
             Get-Process explorer -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -ne "" } | Stop-Process -Force -ErrorAction SilentlyContinue
             Get-Process cmd -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             (New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.Quit() }
             Start-Sleep 2
           }
           function Probe($name, $file, $argList) {
-            Clean
+            Reset-Desktop
             $p = Start-Process -FilePath $file -ArgumentList $argList -PassThru
             Start-Sleep 6
             $shell = (New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.LocationURL }
