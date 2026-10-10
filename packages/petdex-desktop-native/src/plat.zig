@@ -1214,13 +1214,22 @@ pub fn openFolder(path: []const u8) void {
     var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     var scope = Scope.init();
     defer scope.deinit();
+    const win_path = windowsPath(&buf, path) orelse return;
+    std.debug.print("repro792: explorer.exe [{s}]\n", .{win_path});
     var child = std.process.spawn(scope.io(), .{
-        .argv = &.{ "explorer.exe", windowsPath(&buf, path) orelse return },
+        .argv = &.{ "explorer.exe", win_path },
         .stdin = .ignore,
         .stdout = .ignore,
         .stderr = .ignore,
-    }) catch return;
-    _ = child.wait(scope.io()) catch {};
+    }) catch |err| {
+        std.debug.print("repro792: spawn failed {s}\n", .{@errorName(err)});
+        return;
+    };
+    const term = child.wait(scope.io()) catch |err| {
+        std.debug.print("repro792: wait failed {s}\n", .{@errorName(err)});
+        return;
+    };
+    std.debug.print("repro792: exited {any}\n", .{term});
 }
 
 /// explorer.exe treats a forward-slash path as unknown and opens the

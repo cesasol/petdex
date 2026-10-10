@@ -150,6 +150,7 @@ jobs:
             $opened = [bool]((New-Object -ComObject Shell.Application).Windows() | Where-Object { $_.LocationURL -like "*petdex/pets*" })
             $titles = Get-Process | Where-Object { $_.MainWindowTitle -ne "" } | ForEach-Object { "$($_.ProcessName): $($_.MainWindowTitle)" }
             & $cuse capture "e2e\$v-after-click.png" --json | Out-Null
+            Get-Content "e2e\$v.log" | Select-String repro792 | ForEach-Object { "$v log: $_" } | Tee-Object -Append e2e\summary.txt
             "{0,-7} opened={1} titles=[{2}]" -f $v, $opened, ($titles -join " | ") | Tee-Object -Append e2e\summary.txt
           }
           Get-Content e2e\summary.txt
