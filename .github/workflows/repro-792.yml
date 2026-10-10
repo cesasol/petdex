@@ -134,8 +134,11 @@ jobs:
             Start-Sleep 12
             & $cuse windows --json | Out-File "e2e\$v-windows.json"
             & $cuse elements --json 2>&1 | Out-File "e2e\$v-elements.json"
+            & $cuse move 340 400 --json | Out-Null
+            & $cuse scroll down 40 --json | Out-Null
+            Start-Sleep 2
             & $cuse capture "e2e\$v-settings.png" --json | Out-Null
-            $click = & $cuse click --element="Open folder" --json 2>&1
+            $click = if (Test-Path "scenarios\792-open-folder.png") { & $cuse click --find="scenarios\792-open-folder.png" --json 2>&1 } else { "no template yet" }
             "$v click: $click" | Tee-Object -Append e2e\summary.txt
             Start-Sleep 6
             $opened = [bool]((New-Object -ComObject Shell.Application).Windows() | Where-Object { $_.LocationURL -like "*petdex/pets*" })
