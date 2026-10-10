@@ -134,8 +134,12 @@ jobs:
             Start-Sleep 12
             & $cuse windows --json | Out-File "e2e\$v-windows.json"
             & $cuse elements --json 2>&1 | Out-File "e2e\$v-elements.json"
-            & $cuse move 340 400 --json | Out-Null
-            & $cuse scroll down 40 --json | Out-Null
+            $win = (& $cuse windows --json | ConvertFrom-Json).data | Where-Object { $_.title -eq "Petdex Settings" } | Select-Object -First 1
+            "$v settings rect: $($win.x),$($win.y) $($win.width)x$($win.height)" | Tee-Object -Append e2e\summary.txt
+            $cx = [int]($win.x + $win.width / 2); $cy = [int]($win.y + $win.height * 0.6)
+            & $cuse focus "Petdex Settings" --json | Out-Null
+            & $cuse move $cx $cy --json | Out-Null
+            foreach ($i in 1..10) { & $cuse scroll down 10 --json | Out-Null; Start-Sleep -Milliseconds 200 }
             Start-Sleep 2
             & $cuse capture "e2e\$v-settings.png" --json | Out-Null
             $click = if (Test-Path "scenarios\792-open-folder.png") { & $cuse click --find="scenarios\792-open-folder.png" --json 2>&1 } else { "no template yet" }
