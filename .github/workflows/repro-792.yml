@@ -41,9 +41,25 @@ jobs:
             "{0,-28} opened={1} exited={2} titles=[{3}]" -f $name, $opened, $p.HasExited, ($titles -join " | ") | Tee-Object -Append evidence\summary.txt
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           }
+          function ProbeCreate($name, $argLine) {
+            Reset-Desktop
+            # CreateProcess with redirected stdio, the way std.process.spawn launches.
+            $psi = New-Object System.Diagnostics.ProcessStartInfo "explorer.exe", $argLine
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+            $p = [System.Diagnostics.Process]::Start($psi)
+            Start-Sleep 6
+            $opened = [bool]((New-Object -ComObject Shell.Application).Windows() | Where-Object { $_.LocationURL -like "*petdex/pets*" })
+            & $cuse capture "evidence\$name.png" --json | Out-Null
+            "{0,-28} opened={1} exit={2}" -f $name, $opened, $(if ($p.HasExited) { $p.ExitCode } else { "running" }) | Tee-Object -Append evidence\summary.txt
+          }
           function Matrix($tag) {
             Probe "$tag-cmd-start" "cmd.exe" @("/c", "start", '""', "`"$dir`"")
             Probe "$tag-explorer" "explorer.exe" @("`"$dir`"")
+            ProbeCreate "$tag-create-plain" "$dir"
+            ProbeCreate "$tag-create-quoted" "`"$dir`""
+            ProbeCreate "$tag-create-e" "/e,`"$dir`""
+            ProbeCreate "$tag-create-root" "/root,`"$dir`""
           }
           Matrix "baseline"
           # Break the default verb for folders the way a stale shell extension does.
@@ -119,23 +135,26 @@ jobs:
           $cuse = "$PWD\cuse-src\dist\cuse.exe"
           New-Item -ItemType Directory -Force e2e | Out-Null
           $clsid = "{0BADC0DE-0000-4000-8000-000000000792}"
-          foreach ($k in "Directory", "Folder") {
-            $base = "HKCU:\Software\Classes\$k\shell"
-            New-Item -Force "$base\petdexbroken\command" | Out-Null
-            Set-ItemProperty "$base" -Name "(default)" -Value "petdexbroken"
-            New-ItemProperty -Force "$base\petdexbroken\command" -Name DelegateExecute -Value $clsid | Out-Null
-          }
-          foreach ($v in "before", "after") {
+          foreach ($pass in "healthy-before", "healthy-after", "broken-before", "broken-after") {
+            $v = $pass.Split("-")[1]
+            if ($pass -eq "broken-before") {
+              foreach ($k in "Directory", "Folder") {
+                $base = "HKCU:\Software\Classes\$k\shell"
+                New-Item -Force "$base\petdexbroken\command" | Out-Null
+                Set-ItemProperty "$base" -Name "(default)" -Value "petdexbroken"
+                New-ItemProperty -Force "$base\petdexbroken\command" -Name DelegateExecute -Value $clsid | Out-Null
+              }
+            }
             Get-Process petdex-desktop-native*, cmd -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             (New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.Quit() }
             # First run with no hooked agent opens Settings on its own.
             '{"active_pet":"ci-pet","agents_prompted":false}' | Set-Content "$env:USERPROFILE\.petdex\desktop-native-settings.json" -NoNewline
-            $app = Start-Process -FilePath "$PWD\bins\petdex-desktop-native-$v.exe" -PassThru -RedirectStandardError "e2e\$v.log"
+            $app = Start-Process -FilePath "$PWD\bins\petdex-desktop-native-$v.exe" -PassThru -RedirectStandardError "e2e\$pass.log"
             Start-Sleep 12
-            & $cuse windows --json | Out-File "e2e\$v-windows.json"
-            & $cuse elements --json 2>&1 | Out-File "e2e\$v-elements.json"
+            & $cuse windows --json | Out-File "e2e\$pass-windows.json"
+            & $cuse elements --json 2>&1 | Out-File "e2e\$pass-elements.json"
             $win = (& $cuse windows --json | ConvertFrom-Json).data | Where-Object { $_.title -eq "Petdex Settings" } | Select-Object -First 1
-            "$v settings rect: $($win.x),$($win.y) $($win.width)x$($win.height)" | Tee-Object -Append e2e\summary.txt
+            "$pass settings rect: $($win.x),$($win.y) $($win.width)x$($win.height)" | Tee-Object -Append e2e\summary.txt
             $cx = [int]($win.x + $win.width / 2); $cy = [int]($win.y + $win.height * 0.6)
             & $cuse focus "Petdex Settings" --json | Out-Null
             & $cuse move $cx $cy --json | Out-Null
@@ -143,15 +162,15 @@ jobs:
             if (-not ('W.M' -as [type])) { Add-Type -Namespace W -Name M -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, int d, UIntPtr e);' }
             foreach ($i in 1..30) { [W.M]::mouse_event(0x0800, 0, 0, -120, [UIntPtr]::Zero); Start-Sleep -Milliseconds 50 }
             Start-Sleep 2
-            & $cuse capture "e2e\$v-settings.png" --json | Out-Null
+            & $cuse capture "e2e\$pass-settings.png" --json | Out-Null
             $click = if (Test-Path "scenarios\792-open-folder.png") { & $cuse click --find="scenarios\792-open-folder.png" --json 2>&1 } else { "no template yet" }
-            "$v click: $click" | Tee-Object -Append e2e\summary.txt
+            "$pass click: $click" | Tee-Object -Append e2e\summary.txt
             Start-Sleep 6
             $opened = [bool]((New-Object -ComObject Shell.Application).Windows() | Where-Object { $_.LocationURL -like "*petdex/pets*" })
             $titles = Get-Process | Where-Object { $_.MainWindowTitle -ne "" } | ForEach-Object { "$($_.ProcessName): $($_.MainWindowTitle)" }
-            & $cuse capture "e2e\$v-after-click.png" --json | Out-Null
-            Get-Content "e2e\$v.log" | Select-String repro792 | ForEach-Object { "$v log: $_" } | Tee-Object -Append e2e\summary.txt
-            "{0,-7} opened={1} titles=[{2}]" -f $v, $opened, ($titles -join " | ") | Tee-Object -Append e2e\summary.txt
+            & $cuse capture "e2e\$pass-after-click.png" --json | Out-Null
+            Get-Content "e2e\$pass.log" | Select-String repro792 | ForEach-Object { "$pass log: $_" } | Tee-Object -Append e2e\summary.txt
+            "{0,-15} opened={1} titles=[{2}]" -f $pass, $opened, ($titles -join " | ") | Tee-Object -Append e2e\summary.txt
           }
           Get-Content e2e\summary.txt
       - uses: actions/upload-artifact@v4
