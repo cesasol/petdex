@@ -245,6 +245,12 @@ extern "kernel32" fn ReadDirectoryChangesW(
 /// One Io per calling thread. Cheap to build (no worker threads spin
 /// up until an async call asks for them) and never shared, so the
 /// blocking helpers below are safe from any thread.
+/// The process environment, set once by main(). Children spawned through a
+/// Scope inherit it; with the default empty value Windows children start
+/// without SystemRoot or PATH, and `start` fails with "Class not
+/// registered" (#792).
+pub var process_environ: std.process.Environ = .empty;
+
 pub const Scope = struct {
     threaded: std.Io.Threaded,
 
@@ -252,7 +258,7 @@ pub const Scope = struct {
         // Allocator.failing is what the SDK passes when a scope only
         // does blocking calls: it is consulted solely by the async
         // vtable entries, which nothing here reaches.
-        return .{ .threaded = std.Io.Threaded.init(std.heap.page_allocator, .{}) };
+        return .{ .threaded = std.Io.Threaded.init(std.heap.page_allocator, .{ .environ = process_environ }) };
     }
 
     pub fn io(self: *Scope) std.Io {
@@ -1203,48 +1209,6 @@ pub fn openExternal(target: []const u8) void {
         .stderr = .ignore,
     }) catch return;
     _ = child.wait(io) catch {};
-}
-
-/// Open a folder in the file manager. Windows goes straight to
-/// explorer.exe: `start` resolves the folder's default shell verb, and a
-/// stale handler there fails with "Class not registered" (#792) while
-/// leaving a modal dialog that blocks the wait below.
-pub fn openFolder(path: []const u8) void {
-    if (builtin.os.tag != .windows) return openExternal(path);
-    var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    var scope = Scope.init();
-    defer scope.deinit();
-    const win_path = windowsPath(&buf, path) orelse return;
-    std.debug.print("repro792: explorer.exe [{s}]\n", .{win_path});
-    var child = std.process.spawn(scope.io(), .{
-        .argv = &.{ "explorer.exe", win_path },
-        .stdin = .ignore,
-        .stdout = .ignore,
-        .stderr = .ignore,
-    }) catch |err| {
-        std.debug.print("repro792: spawn failed {s}\n", .{@errorName(err)});
-        return;
-    };
-    const term = child.wait(scope.io()) catch |err| {
-        std.debug.print("repro792: wait failed {s}\n", .{@errorName(err)});
-        return;
-    };
-    std.debug.print("repro792: exited {any}\n", .{term});
-}
-
-/// explorer.exe treats a forward-slash path as unknown and opens the
-/// default folder instead.
-fn windowsPath(buf: []u8, path: []const u8) ?[]const u8 {
-    if (path.len > buf.len) return null;
-    for (path, 0..) |c, i| buf[i] = if (c == '/') '\\' else c;
-    return buf[0..path.len];
-}
-
-test "windowsPath uses backslashes" {
-    var buf: [64]u8 = undefined;
-    try std.testing.expectEqualStrings("C:\\Users\\a\\.petdex\\pets", windowsPath(&buf, "C:\\Users\\a/.petdex/pets").?);
-    var small: [4]u8 = undefined;
-    try std.testing.expect(windowsPath(&small, "C:/long") == null);
 }
 
 /// Resolve the current default HTTP handler through NSWorkspace, then activate
