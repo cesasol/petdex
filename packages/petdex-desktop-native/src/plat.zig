@@ -1194,14 +1194,6 @@ pub fn requestQuit() void {
 /// spawn, no shell, so a path with quotes cannot become an argument
 /// injection the way the old `system()` string could.
 pub fn openExternal(target: []const u8) void {
-    if (builtin.os.tag == .windows) {
-        std.debug.print("repro792: target [{s}] use_global={}\n", .{ target, process_environ.block.use_global });
-        if (std.process.Environ.createMap(process_environ, std.heap.page_allocator)) |m| {
-            var map = m;
-            defer map.deinit();
-            std.debug.print("repro792: vars={d} SystemRoot={s}\n", .{ map.count(), map.get("SystemRoot") orelse "(none)" });
-        } else |err| std.debug.print("repro792: map err {s}\n", .{@errorName(err)});
-    }
     var scope = Scope.init();
     defer scope.deinit();
     const io = scope.io();
@@ -1215,12 +1207,8 @@ pub fn openExternal(target: []const u8) void {
         .stdin = .ignore,
         .stdout = .ignore,
         .stderr = .ignore,
-    }) catch |err| {
-        std.debug.print("repro792: spawn err {s}\n", .{@errorName(err)});
-        return;
-    };
-    const term = child.wait(io) catch return;
-    std.debug.print("repro792: exited {any}\n", .{term});
+    }) catch return;
+    _ = child.wait(io) catch {};
 }
 
 /// Resolve the current default HTTP handler through NSWorkspace, then activate
