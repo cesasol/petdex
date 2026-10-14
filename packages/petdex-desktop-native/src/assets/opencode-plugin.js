@@ -204,8 +204,6 @@ async function notify({ state, duration, text, title, busy, sessionId, status, m
   ]);
 }
 
-// Shared by both plugin APIs. fetchTitle reads opencode's own
-// LLM-generated session title for the bubble; cwd is undefined on V1.
 function createPetdex({ fetchTitle, cwd }) {
   const titleCache = new Map();
   const clippedTitle = (title) =>
@@ -272,8 +270,6 @@ function createPetdex({ fetchTitle, cwd }) {
   return { syncServerTitle, tool, idle, failed };
 }
 
-// V1 plugin API: an async function receiving the plugin context and
-// returning the hooks object.
 const PetdexPlugin = async ({ client }) => {
   const petdex = createPetdex({
     fetchTitle: async (id) => (client ? (await client.session.get({ path: { id } }))?.data?.title : null),
@@ -328,7 +324,5 @@ async function setup(ctx) {
   return () => controller.abort();
 }
 
-// V1 1.18.29+ calls server(); older V1 picks up the named function export.
-// V2 reads id and setup() and ignores both.
 export default { id: "petdex", setup, server: PetdexPlugin };
 export { PetdexPlugin };

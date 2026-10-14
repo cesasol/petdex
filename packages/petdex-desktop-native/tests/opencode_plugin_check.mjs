@@ -64,7 +64,6 @@ try {
   assert(titles.length === 1 && titles[0].title === "Renamed", "V2 forwards renames from its own location only");
   assert(JSON.stringify(states.sort()) === JSON.stringify(["failed", "idle", "running", "waving"]), `V2 states: ${states}`);
 
-  // V1
   posts.length = 0;
   const v1 = await plugin.server({ client: { session: { get: async () => ({ data: { title: "V1 title" } }) } } });
   await v1["tool.execute.before"]({ tool: "grep", sessionID: "s2" }, { args: { pattern: "todo" } });
